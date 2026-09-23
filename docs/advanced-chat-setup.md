@@ -122,8 +122,10 @@ pin:
   rejects a CJK title and a Japanese pin rejects a Cyrillic one. A CJK pin
   keeps borrowed Latin terms (`Python`, `WeChat Pay`) as long as the title
   also holds at least two CJK characters, the same exemption the
-  conversation-based check applies. Styled alphabets such as mathematical
-  bold or fullwidth letters count as the plain letters they decompose to.
+  conversation-based check applies. "Substantially outside" means more than
+  a third of the title's letters, summed across every other script. Styled
+  alphabets such as mathematical bold, circled, enclosed or fullwidth letters
+  count as the plain letters they decompose to.
 - **A nonblank pin the script map cannot name** (`Amharic`, say) is checked
   against the title's own dominant script. That rejects a title written half
   in the requested language and half in the conversation's, and accepts one

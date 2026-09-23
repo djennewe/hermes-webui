@@ -709,6 +709,40 @@ def test_mathematical_greek_counts_as_greek():
     assert _generated_title_language_mismatch("How do I fix this error?", styled, "") is True
 
 
+def test_enclosed_latin_is_drift_under_a_conflicting_pin():
+    """Enclosed letters are category So and fail isalpha() before NFKC, which
+    used to leave them out of the count entirely: a zero denominator, and a
+    Latin title passing a CJK pin."""
+    from api.streaming import _script_counts, _script_drift, _generated_title_language_mismatch
+
+    assert "\u24b6".isalpha() is False  # the trap this test pins
+    assert _script_counts("\u24b6\u24b7") == {"latin": 2}
+    assert _script_drift("\u24b6\u24b7", "cjk") is True
+    assert _generated_title_language_mismatch("\u3053\u3093\u306b\u3061\u306f", "\u24b6\u24b7", "Japanese") is True
+
+
+def test_compatibility_expansion_counts_every_codepoint():
+    """A ligature is two letters. Collapsing the expansion to one count kept a
+    title under the threshold that it crosses when counted per codepoint."""
+    from api.streaming import _script_counts, _script_drift
+
+    title = "\u041f\u0440\u0438\u0432\u0435" + "\ufb00\ufb01"   # 5 Cyrillic + ff, fi
+    assert _script_counts(title) == {"cyrillic": 5, "latin": 4}
+    assert _script_drift(title, "cyrillic") is True     # 4/9 = 44%; collapsed it was 2/7 = 29%
+
+
+def test_foreign_scripts_aggregate_against_the_threshold():
+    """Two foreign scripts each under 35% but 60% together are drift."""
+    from api.streaming import _script_counts, _script_drift, _generated_title_language_mismatch
+
+    title = "ABCD\u03b1\u03b2\u03b3\u0430\u0431\u0432"
+    assert _script_counts(title) == {"latin": 4, "greek": 3, "cyrillic": 3}
+    assert _script_drift(title, "latin") is True
+    assert _generated_title_language_mismatch("How do I fix this?", title, "English") is True
+    # The CJK borrowed-Latin policy still wins before aggregation.
+    assert _script_drift("\u4fee\u6b63 Python \u6307\u5357", "cjk") is False
+
+
 def test_truly_unclassified_letters_count_as_other():
     """Letters no keyword recognizes still land in a counted bucket, so an
     all-unknown-script title can no longer pass a pin by vanishing."""

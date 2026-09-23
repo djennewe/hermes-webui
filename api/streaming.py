@@ -4455,12 +4455,17 @@ def _script_counts(text: str) -> dict:
     its Unicode character name. Nothing alphabetic is dropped: a letter no
     keyword recognizes counts as ``other``, so a title written in an
     unclassified script is still visible to drift detection instead of
-    vanishing from the denominator. Letters whose NFKC compatibility form is
-    a recognized letter (mathematical alphabets, circled and fullwidth forms)
-    count as that letter's script.
+    vanishing from the denominator. Input is NFKC-normalised first, so a
+    mathematical, circled, enclosed or fullwidth letter counts as the plain
+    letter it decomposes to, and a ligature counts as each of its letters.
     """
     counts: dict[str, int] = {}
-    for ch in str(text or ''):
+    # Normalise once, up front. Enclosed letters (Ⓐ) are category So and fail
+    # isalpha() in their original form, and a ligature (ﬁ) expands to two
+    # letters; counting the NFKC expansion codepoint by codepoint makes both
+    # visible to the denominator. Scripts with no compatibility form
+    # (Ethiopic, Cherokee) are unchanged by NFKC.
+    for ch in unicodedata.normalize('NFKC', str(text or '')):
         if not ch.isalpha():
             continue
         o = ord(ch)
@@ -4489,19 +4494,6 @@ def _script_counts(text: str) -> dict:
                 if keyword in name:
                     bucket = mapped
                     break
-            if bucket == 'other':
-                # Mathematical and letterlike alphabets ("MATHEMATICAL BOLD
-                # CAPITAL E", circled and fullwidth forms, ligatures) carry no
-                # script keyword in their name, but their NFKC compatibility
-                # form is the plain letter. Classify that instead, so a
-                # styled Latin or Greek title is not read as an unknown
-                # script. Scripts with no compatibility form (Ethiopic,
-                # Cherokee, ...) are unchanged by NFKC and stay ``other``.
-                folded = unicodedata.normalize('NFKC', ch)
-                if folded != ch:
-                    sub = _script_counts(folded)
-                    if sub:
-                        bucket = max(sub, key=sub.get)
         counts[bucket] = counts.get(bucket, 0) + 1
     return counts
 
@@ -4615,6 +4607,10 @@ def _script_drift(title: str, expected_script: str) -> bool:
     total = sum(counts.values())
     if total < 2:
         return False
+    # Sum every non-expected bucket, then apply the minimum-two / 35% rule to the
+    # aggregate. Per-bucket testing let a title that is 30% Greek and 30%
+    # Cyrillic pass a Latin pin because neither share reached 35% alone.
+    foreign = 0
     for script, n in counts.items():
         if script == expected_script:
             continue
@@ -4626,9 +4622,8 @@ def _script_drift(title: str, expected_script: str) -> bool:
         # pinned path gets the same exemption as the conversation path.)
         if expected_script == 'cjk' and script == 'latin' and counts.get('cjk', 0) >= 2:
             continue
-        if n >= 2 and (n / total) >= 0.35:
-            return True
-    return False
+        foreign += n
+    return foreign >= 2 and (foreign / total) >= 0.35
 
 
 def _configured_title_language() -> str:
