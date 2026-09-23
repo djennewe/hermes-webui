@@ -663,6 +663,52 @@ def test_mixed_script_borrowed_term_still_accepted(monkeypatch):
     assert status == "llm_stub"
 
 
+def _math_bold(text: str) -> str:
+    """Map ASCII letters onto the MATHEMATICAL BOLD alphabet (U+1D400..)."""
+    out = []
+    for ch in text:
+        if "A" <= ch <= "Z":
+            out.append(chr(0x1D400 + ord(ch) - ord("A")))
+        elif "a" <= ch <= "z":
+            out.append(chr(0x1D41A + ord(ch) - ord("a")))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def test_mathematical_latin_counts_as_latin():
+    """A styled Latin title is Latin, not an unknown script.
+
+    "MATHEMATICAL BOLD CAPITAL E" carries no script keyword in its name, so
+    name-based bucketing alone filed it under ``other`` and an English
+    conversation rejected its own styled title as drift.
+    """
+    from api.streaming import _script_counts, _generated_title_language_mismatch
+
+    styled = _math_bold("Error Troubleshooting Guide")
+    assert _script_counts(styled) == {"latin": 25}
+    assert _generated_title_language_mismatch("How do I fix this error?", styled, "") is False
+    assert _generated_title_language_mismatch("How do I fix this error?", styled, "English") is False
+
+
+def test_styled_latin_user_text_accepts_plain_latin_title():
+    from api.streaming import _dominant_script, _generated_title_language_mismatch
+
+    styled_user = _math_bold("How do I fix this error") + " please help"
+    assert _dominant_script(styled_user) == "latin"
+    assert _generated_title_language_mismatch(styled_user, "Error Troubleshooting Guide", "") is False
+
+
+def test_mathematical_greek_counts_as_greek():
+    from api.streaming import _script_counts, _generated_title_language_mismatch
+
+    # MATHEMATICAL BOLD CAPITAL ALPHA, BETA, GAMMA, DELTA, EPSILON
+    styled = "".join(chr(0x1D6A8 + i) for i in range(5))
+    assert _script_counts(styled) == {"greek": 5}
+    # ... and it is still drift for an English conversation.
+    assert _generated_title_language_mismatch("How do I fix this error?", styled, "") is True
+
+
 def test_truly_unclassified_letters_count_as_other():
     """Letters no keyword recognizes still land in a counted bucket, so an
     all-unknown-script title can no longer pass a pin by vanishing."""

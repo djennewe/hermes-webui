@@ -4455,7 +4455,9 @@ def _script_counts(text: str) -> dict:
     its Unicode character name. Nothing alphabetic is dropped: a letter no
     keyword recognizes counts as ``other``, so a title written in an
     unclassified script is still visible to drift detection instead of
-    vanishing from the denominator.
+    vanishing from the denominator. Letters whose NFKC compatibility form is
+    a recognized letter (mathematical alphabets, circled and fullwidth forms)
+    count as that letter's script.
     """
     counts: dict[str, int] = {}
     for ch in str(text or ''):
@@ -4487,6 +4489,19 @@ def _script_counts(text: str) -> dict:
                 if keyword in name:
                     bucket = mapped
                     break
+            if bucket == 'other':
+                # Mathematical and letterlike alphabets ("MATHEMATICAL BOLD
+                # CAPITAL E", circled and fullwidth forms, ligatures) carry no
+                # script keyword in their name, but their NFKC compatibility
+                # form is the plain letter. Classify that instead, so a
+                # styled Latin or Greek title is not read as an unknown
+                # script. Scripts with no compatibility form (Ethiopic,
+                # Cherokee, ...) are unchanged by NFKC and stay ``other``.
+                folded = unicodedata.normalize('NFKC', ch)
+                if folded != ch:
+                    sub = _script_counts(folded)
+                    if sub:
+                        bucket = max(sub, key=sub.get)
         counts[bucket] = counts.get(bucket, 0) + 1
     return counts
 

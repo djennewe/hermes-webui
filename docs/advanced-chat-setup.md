@@ -119,7 +119,11 @@ pin:
 - **A pin the script map recognises** (`Japanese`, `Russian`,
   `Brazilian Portuguese`, `pt-BR`) is checked against that language's script.
   A title substantially outside it is still rejected, so an English pin
-  rejects a CJK title and a Japanese pin rejects a Cyrillic one.
+  rejects a CJK title and a Japanese pin rejects a Cyrillic one. A CJK pin
+  keeps borrowed Latin terms (`Python`, `WeChat Pay`) as long as the title
+  also holds at least two CJK characters, the same exemption the
+  conversation-based check applies. Styled alphabets such as mathematical
+  bold or fullwidth letters count as the plain letters they decompose to.
 - **A nonblank pin the script map cannot name** (`Amharic`, say) is checked
   against the title's own dominant script. That rejects a title written half
   in the requested language and half in the conversation's, and accepts one
