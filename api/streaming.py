@@ -4481,7 +4481,8 @@ def _script_counts(text: str) -> dict:
     # character's NFKC expansion codepoint by codepoint makes both visible to
     # the denominator. Number characters are excluded on their ORIGINAL
     # category, before expansion: a Roman numeral (Ⅲ, category Nl) expands to
-    # Latin letters and would otherwise make 第Ⅲ章 look Latin-dominant, and
+    # Latin letters and would otherwise make a CJK chapter title (U+7B2C U+2162
+    # U+7AE0) look Latin-dominant, and
     # circled digits (①, No) expand to digits. Scripts with no compatibility
     # form (Ethiopic, Cherokee) are unchanged by NFKC.
     def _letters():
