@@ -4442,6 +4442,19 @@ _SCRIPT_NAME_KEYWORDS = (
     ('THAI', 'thai'),
     ('GEORGIAN', 'georgian'),
     ('ARMENIAN', 'armenian'),
+    ('ETHIOPIC', 'ethiopic'),
+    ('BENGALI', 'bengali'),
+    ('TAMIL', 'tamil'),
+    ('TELUGU', 'telugu'),
+    ('KANNADA', 'kannada'),
+    ('MALAYALAM', 'malayalam'),
+    ('GUJARATI', 'gujarati'),
+    ('GURMUKHI', 'gurmukhi'),
+    ('SINHALA', 'sinhala'),
+    ('KHMER', 'khmer'),
+    ('MYANMAR', 'myanmar'),
+    ('TIBETAN', 'tibetan'),
+    ('LAO', 'lao'),
 )
 
 
@@ -4450,24 +4463,35 @@ def _script_counts(text: str) -> dict:
 
     Buckets: ``latin``, ``cjk`` (Han/Hiragana/Katakana/Hangul), ``cyrillic``,
     ``arabic``, ``hebrew``, ``greek``, ``devanagari``, ``thai``,
-    ``georgian``, ``armenian``, and ``other``. Common ranges are matched by
+    ``georgian``, ``armenian``, ``ethiopic``, the Indic and South-East
+    Asian scripts named in ``_SCRIPT_NAME_KEYWORDS``, and ``other``. Common ranges are matched by
     ordinal for speed; everything alphabetic outside them is classified by
     its Unicode character name. Nothing alphabetic is dropped: a letter no
     keyword recognizes counts as ``other``, so a title written in an
     unclassified script is still visible to drift detection instead of
-    vanishing from the denominator. Input is NFKC-normalised first, so a
+    vanishing from the denominator. Each character is NFKC-expanded, so a
     mathematical, circled, enclosed or fullwidth letter counts as the plain
     letter it decomposes to, and a ligature counts as each of its letters.
+    Characters that are numbers in their original form (Roman numerals,
+    circled digits) are left out entirely.
     """
     counts: dict[str, int] = {}
-    # Normalise once, up front. Enclosed letters (Ⓐ) are category So and fail
-    # isalpha() in their original form, and a ligature (ﬁ) expands to two
-    # letters; counting the NFKC expansion codepoint by codepoint makes both
-    # visible to the denominator. Scripts with no compatibility form
-    # (Ethiopic, Cherokee) are unchanged by NFKC.
-    for ch in unicodedata.normalize('NFKC', str(text or '')):
-        if not ch.isalpha():
-            continue
+    # Enclosed letters (Ⓐ) are category So and fail isalpha() in their
+    # original form, and a ligature (ﬁ) expands to two letters; counting each
+    # character's NFKC expansion codepoint by codepoint makes both visible to
+    # the denominator. Number characters are excluded on their ORIGINAL
+    # category, before expansion: a Roman numeral (Ⅲ, category Nl) expands to
+    # Latin letters and would otherwise make 第Ⅲ章 look Latin-dominant, and
+    # circled digits (①, No) expand to digits. Scripts with no compatibility
+    # form (Ethiopic, Cherokee) are unchanged by NFKC.
+    def _letters():
+        for raw in str(text or ''):
+            if unicodedata.category(raw).startswith('N'):
+                continue
+            for ch in unicodedata.normalize('NFKC', raw):
+                if ch.isalpha():
+                    yield ch
+    for ch in _letters():
         o = ord(ch)
         if (0x0041 <= o <= 0x024F) or (0x1E00 <= o <= 0x1EFF):
             bucket = 'latin'
@@ -4563,6 +4587,25 @@ _TITLE_LANGUAGE_SCRIPTS = {
     'thai': 'thai', 'th': 'thai',
     'georgian': 'georgian', 'ka': 'georgian',
     'armenian': 'armenian', 'hy': 'armenian',
+    'persian': 'arabic', 'farsi': 'arabic', 'urdu': 'arabic', 'pashto': 'arabic',
+    'fa': 'arabic', 'ur': 'arabic', 'ps': 'arabic',
+    'kazakh': 'cyrillic', 'kyrgyz': 'cyrillic', 'tajik': 'cyrillic', 'mongolian': 'cyrillic',
+    'kk': 'cyrillic', 'ky': 'cyrillic', 'tg': 'cyrillic', 'mn': 'cyrillic',
+    'yiddish': 'hebrew', 'yi': 'hebrew',
+    'sanskrit': 'devanagari', 'sa': 'devanagari',
+    'amharic': 'ethiopic', 'tigrinya': 'ethiopic', 'am': 'ethiopic', 'ti': 'ethiopic',
+    'bengali': 'bengali', 'bangla': 'bengali', 'bn': 'bengali',
+    'tamil': 'tamil', 'ta': 'tamil',
+    'telugu': 'telugu', 'te': 'telugu',
+    'kannada': 'kannada', 'kn': 'kannada',
+    'malayalam': 'malayalam', 'ml': 'malayalam',
+    'gujarati': 'gujarati', 'gu': 'gujarati',
+    'punjabi': 'gurmukhi', 'panjabi': 'gurmukhi', 'pa': 'gurmukhi',
+    'sinhala': 'sinhala', 'sinhalese': 'sinhala', 'si': 'sinhala',
+    'khmer': 'khmer', 'cambodian': 'khmer', 'km': 'khmer',
+    'burmese': 'myanmar', 'myanmar': 'myanmar', 'my': 'myanmar',
+    'tibetan': 'tibetan', 'bo': 'tibetan',
+    'lao': 'lao', 'lo': 'lao',
 }
 
 
@@ -4716,28 +4759,23 @@ def _generated_title_language_mismatch(user_text: str, title: str, pinned_langua
 
     A pin that resolves to a script bucket retargets drift detection at the
     configured language. The title then has to be mostly in the pinned
-    script, whatever language the conversation is in.
+    script, whatever language the conversation is in. The conversation-based
+    check does not also run in that case, because it measures against the
+    wrong thing: it would reject the pinned title the prompt just asked for.
 
-    The conversation-based check does not also run in that case, because it
-    measures against the wrong thing: it would reject the pinned title the
-    prompt just asked for.
-
-    A nonblank pin the script map does not know is still a pin. The prompt
-    said "Write the title in <language>" and accepted the value verbatim, so
-    the conversation is the wrong yardstick there too, and applying it
-    discards compliant output: an English conversation with a Swahili or
-    Amharic pin produced a title the #3293 check read as drift. Those pins
-    validate the title against its own dominant script, which still rejects a
-    title that is half the requested language and half the conversation's,
-    while accepting one written wholly in a script this module cannot name.
-
-    Only a blank pin keeps the #3293 conversation-based validation.
+    A pin the script map cannot resolve keeps the #3293 conversation-based
+    check, exactly as a blank pin does. Validating such a title against its
+    own dominant script was tried and it disables the guard outright: any
+    single-script title agrees with itself, so an English conversation with
+    an unmapped pin accepted a Russian title that an unpinned run rejects.
+    Cross-script languages this module means to support are listed in
+    ``_TITLE_LANGUAGE_SCRIPTS`` with a bucket of their own (Amharic maps to
+    ``ethiopic``, Bengali to ``bengali``, and so on), which is what makes a
+    compliant title in one of them survive validation.
     """
     pinned_script = _resolve_pinned_title_script(pinned_language)
     if pinned_script:
         return _script_drift(title, pinned_script)
-    if str(pinned_language or '').strip():
-        return _script_drift(title, _dominant_script(title))
     return _title_language_mismatch(user_text, title)
 
 

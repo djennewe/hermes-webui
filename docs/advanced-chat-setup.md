@@ -116,8 +116,11 @@ a pinned install that same check would reject the pinned title the prompt had
 just asked for. How a generated title is validated therefore depends on the
 pin:
 
-- **A pin the script map recognises** (`Japanese`, `Russian`,
-  `Brazilian Portuguese`, `pt-BR`) is checked against that language's script.
+- **A pin the script map recognises** (`Japanese`, `Russian`, `Amharic`,
+  `Bengali`, `Brazilian Portuguese`, `pt-BR`) is checked against that
+  language's script. The map covers the Latin, Cyrillic, CJK, Arabic, Hebrew,
+  Greek, Devanagari, Thai, Georgian, Armenian and Ethiopic scripts, and the
+  major Indic and South-East Asian ones.
   A title substantially outside it is still rejected, so an English pin
   rejects a CJK title and a Japanese pin rejects a Cyrillic one. A CJK pin
   keeps borrowed Latin terms (`Python`, `WeChat Pay`) as long as the title
@@ -125,16 +128,14 @@ pin:
   conversation-based check applies. "Substantially outside" means more than
   a third of the title's letters, summed across every other script. Styled
   alphabets such as mathematical bold, circled, enclosed or fullwidth letters
-  count as the plain letters they decompose to.
-- **A nonblank pin the script map cannot name** (`Amharic`, say) is checked
-  against the title's own dominant script. That rejects a title written half
-  in the requested language and half in the conversation's, and accepts one
-  written wholly in a script this module cannot name. It cannot distinguish a
-  real unnamed language from a nonsense one, so such a title is kept on the
-  strength of being internally consistent rather than on matching the
-  request.
-- **No pin** keeps the original behaviour unchanged: the title is checked
-  against the language of the conversation's opening message.
+  count as the plain letters they decompose to; Roman numerals and circled
+  digits are not letters and are left out of the count.
+- **A pin the script map cannot resolve**, and **no pin**, both keep the
+  original behaviour: the title is checked against the language of the
+  conversation's opening message. A pin outside the map therefore still
+  changes the prompt, and a title that follows it into a script the
+  conversation does not use is rejected as drift. Pin a language the map
+  knows to get cross-script titles.
 
 Language lookup is diacritic-insensitive and also matches individual tokens of
 a qualified name, so `Francais`, `Français`, `Traditional Chinese` and `pt-BR`
