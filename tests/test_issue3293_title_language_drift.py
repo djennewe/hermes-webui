@@ -373,29 +373,29 @@ def test_unreadable_config_keeps_rejection(monkeypatch):
 # two `accepts_pinned_cross_script_title` tests above.
 
 
-def test_resolve_pinned_title_script_mapping():
-    from api.streaming import _resolve_pinned_title_script
+def test_resolve_pinned_title_scripts_mapping():
+    from api.streaming import _resolve_pinned_title_scripts
 
-    assert _resolve_pinned_title_script("English") == "latin"
-    assert _resolve_pinned_title_script("  japanese  ") == "cjk"
-    assert _resolve_pinned_title_script("Deutsch") == "latin"
-    assert _resolve_pinned_title_script("Brazilian Portuguese") == "latin"
-    assert _resolve_pinned_title_script("ru") == "cyrillic"
+    assert _resolve_pinned_title_scripts("English") == ("latin",)
+    assert _resolve_pinned_title_scripts("  japanese  ") == ("cjk",)
+    assert _resolve_pinned_title_scripts("Deutsch") == ("latin",)
+    assert _resolve_pinned_title_scripts("Brazilian Portuguese") == ("latin",)
+    assert _resolve_pinned_title_scripts("ru") == ("cyrillic",)
     # Diacritics fold onto the ASCII keys.
-    assert _resolve_pinned_title_script("Français") == "latin"
-    assert _resolve_pinned_title_script("Español") == "latin"
+    assert _resolve_pinned_title_scripts("Français") == ("latin",)
+    assert _resolve_pinned_title_scripts("Español") == ("latin",)
     # Unknown names and blank stay unresolved -> conversation-based fallback.
-    assert _resolve_pinned_title_script("Klingon") == ""
-    assert _resolve_pinned_title_script("") == ""
+    assert _resolve_pinned_title_scripts("Klingon") == ()
+    assert _resolve_pinned_title_scripts("") == ()
     # Thai gained a bucket when classification went name-based (round 4), so
     # it resolves now. It was unresolvable while Thai text was invisible to
     # _script_counts.
-    assert _resolve_pinned_title_script("Thai") == "thai"
+    assert _resolve_pinned_title_scripts("Thai") == ("thai",)
     # Native-script endonyms are also unresolved by design: the mapping keys
     # must stay ASCII because api/streaming.py is English-only
     # (test_title_generation_source_has_no_cjk_literals). Such pins keep the
     # conversation-based fallback.
-    assert _resolve_pinned_title_script("日本語") == ""  # "Japanese" written natively
+    assert _resolve_pinned_title_scripts("日本語") == ()  # "Japanese" written natively
 
 
 def test_agent_route_rejects_cjk_under_english_pin(monkeypatch):
@@ -584,7 +584,7 @@ def test_thai_pin_is_now_resolvable_and_validates(monkeypatch):
     a Thai pin accepts compliant Thai output and rejects Latin output."""
     from api import streaming
 
-    assert streaming._resolve_pinned_title_script("Thai") == "thai"
+    assert streaming._resolve_pinned_title_scripts("Thai") == ("thai",)
 
     monkeypatch.setattr(streaming, "_get_aux_title_config", lambda: {"language": "Thai"})
     calls = []
@@ -604,10 +604,10 @@ def test_thai_pin_is_now_resolvable_and_validates(monkeypatch):
 
 
 def test_georgian_and_armenian_resolve():
-    from api.streaming import _resolve_pinned_title_script, _script_drift
+    from api.streaming import _resolve_pinned_title_scripts, _script_drift
 
-    assert _resolve_pinned_title_script("Georgian") == "georgian"
-    assert _resolve_pinned_title_script("Armenian") == "armenian"
+    assert _resolve_pinned_title_scripts("Georgian") == ("georgian",)
+    assert _resolve_pinned_title_scripts("Armenian") == ("armenian",)
     # Georgian output under an English pin is drift.
     assert _script_drift("გამოსწორება", "latin") is True
     # Georgian output under a Georgian pin is not.
@@ -782,9 +782,9 @@ def test_amharic_pin_validates_against_ethiopic(monkeypatch):
     """Validation is retargeted at the pinned script: a title split between
     the requested language and the conversation's is drift, and so is a
     title that ignores the pin altogether."""
-    from api.streaming import _generated_title_language_mismatch, _resolve_pinned_title_script
+    from api.streaming import _generated_title_language_mismatch, _resolve_pinned_title_scripts
 
-    assert _resolve_pinned_title_script("Amharic") == "ethiopic"
+    assert _resolve_pinned_title_scripts("Amharic") == ("ethiopic",)
     assert _generated_title_language_mismatch(
         "How do I fix this error?", "የስህተት መላ ፍለጋ Error Guide", "Amharic"
     ) is True
@@ -801,9 +801,9 @@ def test_unmapped_pin_keeps_the_conversation_guard():
     validation was tried and it switched the guard off: an English question
     with a Russian title passed under an unmapped pin while an unpinned run
     rejected it."""
-    from api.streaming import _generated_title_language_mismatch, _resolve_pinned_title_script
+    from api.streaming import _generated_title_language_mismatch, _resolve_pinned_title_scripts
 
-    assert _resolve_pinned_title_script("Klingon") == ""
+    assert _resolve_pinned_title_scripts("Klingon") == ()
     assert _generated_title_language_mismatch(
         "How do I fix the login button?", "Исправление кнопки входа", "Klingon"
     ) is True
@@ -862,3 +862,129 @@ def test_blank_pin_keeps_the_conversation_check(monkeypatch):
     assert _generated_title_language_mismatch(
         "How do I fix this error?", "Error Troubleshooting Guide", ""
     ) is False
+
+
+GURMUKHI_TITLE = "ਗਲਤੀ ਠੀਕ ਕਰਨਾ"
+SHAHMUKHI_TITLE = "غلطی ٹھیک کرنا"
+
+
+def test_punjabi_pin_accepts_both_scripts():
+    """Punjabi is written in Gurmukhi (India) and Shahmukhi, an Arabic
+    script (Pakistan). An unqualified pin accepts either; an explicit script
+    qualifier narrows it to one; an unrelated script is still drift."""
+    from api.streaming import _generated_title_language_mismatch, _resolve_pinned_title_scripts
+
+    for pin in ("Punjabi", "panjabi", "pa"):
+        assert _resolve_pinned_title_scripts(pin) == ("gurmukhi", "arabic")
+        assert _generated_title_language_mismatch(SHAHMUKHI_TITLE, SHAHMUKHI_TITLE, pin) is False
+        assert _generated_title_language_mismatch(GURMUKHI_TITLE, GURMUKHI_TITLE, pin) is False
+        assert _generated_title_language_mismatch(GURMUKHI_TITLE, "Исправление ошибки", pin) is True
+
+
+def test_punjabi_script_qualifiers_narrow_the_pin():
+    from api.streaming import _generated_title_language_mismatch, _resolve_pinned_title_scripts
+
+    for pin in ("pa-Arab", "Punjabi (Arabic)", "Punjabi (Shahmukhi)", "pa_Arab"):
+        assert _resolve_pinned_title_scripts(pin) == ("arabic",), pin
+        assert _generated_title_language_mismatch(SHAHMUKHI_TITLE, SHAHMUKHI_TITLE, pin) is False
+        assert _generated_title_language_mismatch(SHAHMUKHI_TITLE, GURMUKHI_TITLE, pin) is True
+    for pin in ("pa-Guru", "Punjabi (Gurmukhi)"):
+        assert _resolve_pinned_title_scripts(pin) == ("gurmukhi",), pin
+        assert _generated_title_language_mismatch(GURMUKHI_TITLE, GURMUKHI_TITLE, pin) is False
+        assert _generated_title_language_mismatch(GURMUKHI_TITLE, SHAHMUKHI_TITLE, pin) is True
+
+
+def test_pa_arab_shahmukhi_title_survives_the_aux_wrapper(monkeypatch):
+    """End to end: the Shahmukhi title the pin asked for is kept."""
+    from api import streaming
+
+    monkeypatch.setattr(streaming, "_get_aux_title_config", lambda: {"language": "pa-Arab"})
+    monkeypatch.setattr(streaming, "generate_title_raw_via_aux", _fake_transport(SHAHMUKHI_TITLE, []))
+    title, status, _ = streaming._generate_llm_session_title_via_aux(SHAHMUKHI_TITLE, "ٹھیک اے")
+    assert title == SHAHMUKHI_TITLE
+    assert status == "llm_stub"
+
+
+def test_mongolian_pin_accepts_both_scripts_and_narrows_on_a_qualifier():
+    """Mongolian is written in Cyrillic (Mongolia) and the traditional script
+    (Inner Mongolia). "Traditional" names the script only beside Mongolian."""
+    from api.streaming import _generated_title_language_mismatch, _resolve_pinned_title_scripts
+
+    cyrillic, traditional = "Алдааг засах", "ᠮᠣᠩᠭᠣᠯ ᠪᠢᠴᠢᠭ"
+    assert _resolve_pinned_title_scripts("Mongolian") == ("cyrillic", "mongolian")
+    assert _generated_title_language_mismatch("x", cyrillic, "Mongolian") is False
+    assert _generated_title_language_mismatch("x", traditional, "Mongolian") is False
+    assert _generated_title_language_mismatch("x", "Error fix guide", "Mongolian") is True
+    for pin in ("Mongolian (Traditional)", "Traditional Mongolian", "mn-Mong"):
+        assert _resolve_pinned_title_scripts(pin) == ("mongolian",), pin
+        assert _generated_title_language_mismatch("x", cyrillic, pin) is True
+    assert _generated_title_language_mismatch("x", traditional, "mn-Cyrl") is True
+    assert _resolve_pinned_title_scripts("Chinese (Traditional)") == ("cjk",)
+
+
+def test_minority_scripts_need_a_qualifier():
+    """A bare pin accepts only the scripts in majority use, so the commonest
+    drift (an English title) stays visible. A user who writes Kazakh in Latin
+    or Malay in Jawi opts in with a qualifier."""
+    from api.streaming import _generated_title_language_mismatch, _resolve_pinned_title_scripts
+
+    assert _resolve_pinned_title_scripts("Kazakh") == ("cyrillic",)
+    assert _generated_title_language_mismatch("x", "Error fix guide", "Kazakh") is True
+    assert _generated_title_language_mismatch("x", "Қатені түзету", "Kazakh") is False
+    assert _generated_title_language_mismatch("x", "Qatelikti tuzetu", "kk-Latn") is False
+    assert _generated_title_language_mismatch("x", "Қатені түзету", "kk-Latn") is True
+    assert _resolve_pinned_title_scripts("kk-Arab") == ("arabic",)
+    assert _resolve_pinned_title_scripts("Malay (Jawi)") == ("arabic",)
+    assert _resolve_pinned_title_scripts("Hindi (Roman)") == ("latin",)
+
+
+def test_punjabi_pin_accepts_a_switch_between_its_scripts():
+    """The pinned check replaces the conversation check: a Gurmukhi
+    conversation may get a Shahmukhi title under a bare Punjabi pin."""
+    from api.streaming import _generated_title_language_mismatch
+
+    assert _generated_title_language_mismatch(GURMUKHI_TITLE, SHAHMUKHI_TITLE, "Punjabi") is False
+    assert _generated_title_language_mismatch(SHAHMUKHI_TITLE, GURMUKHI_TITLE, "Punjabi") is False
+
+
+def test_qualifier_beats_the_language_token_wherever_it_sits():
+    from api.streaming import _resolve_pinned_title_scripts
+
+    assert _resolve_pinned_title_scripts("Egyptian Arabic") == ("arabic",)
+    assert _resolve_pinned_title_scripts("Egyptian Arabic (Latin)") == ("latin",)
+    assert _resolve_pinned_title_scripts("Latin Egyptian Arabic") == ("latin",)
+    # accented qualifier is folded before the lookup
+    assert _resolve_pinned_title_scripts("Punjabi (Gurmukh\u012b)") == ("gurmukhi",)
+    # a BCP 47 private-use section is not a script qualifier
+    assert _resolve_pinned_title_scripts("zh-Hant-TW-x-latn") == ("cjk",)
+
+
+def test_lone_characters_outside_a_tag_do_not_end_parsing():
+    """Initials and punctuation between words are skipped, so the language
+    and any qualifier after them still count."""
+    from api.streaming import _resolve_pinned_title_scripts
+
+    assert _resolve_pinned_title_scripts("U.S. English") == ("latin",)
+    assert _resolve_pinned_title_scripts("S. Korean") == ("cjk",)
+    assert _resolve_pinned_title_scripts("Punjabi \u2013 Shahmukhi") == ("arabic",)
+    assert _resolve_pinned_title_scripts("Serbian \u2013 Latin") == ("latin",)
+    assert _resolve_pinned_title_scripts("Punjabi + Shahmukhi") == ("arabic",)
+    assert _resolve_pinned_title_scripts("zh-Hant-u-nu-hanidec") == ("cjk",)
+
+
+def test_script_drift_with_no_expected_script_is_not_drift():
+    from api.streaming import _script_drift
+
+    assert _script_drift("Error fix guide", ()) is False
+
+
+def test_serbian_resolves_only_with_a_qualifier():
+    """Unqualified Serbian stays unmapped (no majority script) and keeps the
+    conversation check; a script qualifier makes it resolvable."""
+    from api.streaming import _resolve_pinned_title_scripts
+
+    assert _resolve_pinned_title_scripts("Serbian") == ()
+    assert _resolve_pinned_title_scripts("sr-Latn") == ("latin",)
+    assert _resolve_pinned_title_scripts("Serbian (Cyrillic)") == ("cyrillic",)
+    assert _resolve_pinned_title_scripts("zh-Hant-TW") == ("cjk",)
+    assert _resolve_pinned_title_scripts("pt-BR") == ("latin",)
